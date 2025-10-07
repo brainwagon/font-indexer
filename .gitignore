@@ -1,0 +1,4 @@
+renders/
+*.pyc
+__pycache__/
+index.html

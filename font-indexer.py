@@ -1,0 +1,209 @@
+
+import os
+import argparse
+import markdown
+from fontTools.ttLib import TTFont
+from PIL import Image, ImageDraw, ImageFont
+
+def get_font_info(font_path):
+    """Extracts information from a TTF font file."""
+    try:
+        font = TTFont(font_path)
+        names = {}
+        for record in font['name'].names:
+            names[record.nameID] = record.toUnicode()
+        
+        return {
+            'family': names.get(1, 'N/A'),
+            'style': names.get(2, 'N/A'),
+            'full_name': names.get(4, 'N/A'),
+            'version': names.get(5, 'N/A'),
+            'copyright': names.get(0, 'N/A'),
+        }
+    except Exception as e:
+        print(f"Error reading {font_path}: {e}")
+        return None
+
+def render_text(text, font_path, image_path, size):
+    """Renders text using a given font and saves it as an image."""
+    try:
+        font = ImageFont.truetype(font_path, size)
+        
+        # Create a dummy image to calculate the text size
+        dummy_img = Image.new('RGB', (1, 1))
+        draw = ImageDraw.Draw(dummy_img)
+        
+        # Get the bounding box of the text
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+        except TypeError:
+            # Fallback for older Pillow versions
+            text_width, text_height = draw.textsize(text, font=font)
+
+
+        img = Image.new('RGBA', (text_width + 20, text_height + 20), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(img)
+        
+        draw.text((10, 10), text, font=font, fill='black')
+        img.save(image_path, 'PNG')
+        return True
+    except Exception as e:
+        print(f"Error rendering text with {font_path}: {e}")
+        return False
+
+def find_fonts(directory):
+    """Finds all TTF fonts in a directory."""
+    fonts = []
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.lower().endswith('.ttf'):
+                fonts.append(os.path.join(root, file))
+    return fonts
+
+def has_required_chars(font_path):
+    """Checks if a font has all required characters (A-Z, a-z, 0-9)."""
+    try:
+        font = TTFont(font_path)
+        cmap = font.getBestCmap()
+        if not cmap:
+            return False
+
+        required_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+        for char in required_chars:
+            if ord(char) not in cmap:
+                return False
+        return True
+    except Exception as e:
+        print(f"Could not check characters for {font_path}: {e}")
+        return False
+
+def check_font_metrics(font_path):
+    """Checks for common font metric issues."""
+    try:
+        font = TTFont(font_path)
+        cmap = font.getBestCmap()
+        if not cmap:
+            return False
+
+        hmtx = font['hmtx']
+        units_per_em = font['head'].unitsPerEm
+        
+        required_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+        for char in required_chars:
+            glyph_name = font.getBestCmap()[ord(char)]
+            advance_width, _ = hmtx[glyph_name]
+
+            if advance_width == 0:
+                return False # Zero width character
+            
+            if advance_width > (units_per_em * 10):
+                return False # Excessively large character width
+
+        return True
+    except Exception as e:
+        print(f"Could not check metrics for {font_path}: {e}")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(description='Generate an HTML index of fonts.')
+    parser.add_argument('--text', type=str, default='The quick brown fox jumps over the lazy dog.',
+                        help='The text to render for each font.')
+    parser.add_argument('--output-dir', type=str, default='renders',
+                        help='The directory to save rendered images.')
+    parser.add_argument('--html-file', type=str, default='index.html',
+                        help='The name of the output HTML file.')
+    parser.add_argument('--font-size', type=int, default=24,
+                        help='The font size to use for rendering.')
+    args = parser.parse_args()
+
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
+    fonts = find_fonts('.')
+    
+    with open(args.html_file, 'w') as f:
+        f.write('<html><head><title>Font Index</title>')
+        f.write('<style>')
+        f.write('body { font-family: sans-serif; margin: 2em; }')
+        f.write('table { border-collapse: collapse; width: 100%; }')
+        f.write('th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }')
+        f.write('th { background-color: #f2f2f2; cursor: pointer; }')
+        f.write('img { max-width: 100%; height: auto; }')
+        f.write('#readme { background-color: #f9f9f9; border: 1px solid #eee; padding: 1em; margin-bottom: 2em; }')
+        f.write('</style>')
+        f.write('</head><body>')
+        f.write('<h1>Font Index</h1>')
+
+        if os.path.exists('README.md'):
+            with open('README.md', 'r') as readme_file:
+                markdown_content = readme_file.read()
+                html_content = markdown.markdown(markdown_content)
+                f.write(f'<div id="readme">{html_content}</div>')
+
+        f.write(f'<p>Rendering the text: "{args.text}"</p>')
+        f.write('<table id="fontTable">')
+        f.write('<thead><tr><th onclick="sortTable(0)">Font Name</th><th onclick="sortTable(1)">Filename</th><th onclick="sortTable(2)">Style</th><th onclick="sortTable(3)">Quality</th><th>Render</th><th>Download</th></tr></thead>')
+        f.write('<tbody>')
+
+        for font_path in sorted(fonts):
+            if not has_required_chars(font_path):
+                continue
+
+            info = get_font_info(font_path)
+            if not info:
+                continue
+
+            metrics_ok = check_font_metrics(font_path)
+            quality_icon = '&#9989;' if metrics_ok else '&#10060;'
+
+            relative_font_path = os.path.relpath(font_path)
+            image_name = os.path.basename(font_path) + '.png'
+            image_path = os.path.join(args.output_dir, image_name)
+            
+            if render_text(args.text, font_path, image_path, args.font_size):
+                f.write('<tr>')
+                f.write(f'<td>{info["full_name"]}</td>')
+                f.write(f'<td>{os.path.basename(font_path)}</td>')
+                f.write(f'<td>{info["style"]}</td>')
+                f.write(f'<td>{quality_icon}</td>')
+                f.write(f'<td><img src="{image_path}" alt="Render of {info["full_name"]}"></td>')
+                f.write(f'<td><a href="{relative_font_path}">Download</a></td>')
+                f.write('</tr>')
+        
+        f.write('</tbody>')
+        f.write('</table>')
+        f.write('''
+<script>
+const sortDirections = {};
+
+function sortTable(n) {
+    const table = document.getElementById("fontTable");
+    const tbody = table.tBodies[0];
+    const rows = Array.from(tbody.rows);
+    
+    const dir = sortDirections[n] === 'asc' ? 'desc' : 'asc';
+    sortDirections[n] = dir;
+
+    rows.sort((a, b) => {
+        const x = a.cells[n].innerText.toLowerCase();
+        const y = b.cells[n].innerText.toLowerCase();
+        
+        if (x < y) {
+            return dir === 'asc' ? -1 : 1;
+        }
+        if (x > y) {
+            return dir === 'asc' ? 1 : -1;
+        }
+        return 0;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+}
+</script>
+        ''')
+        f.write('</body></html>')
+
+if __name__ == '__main__':
+    main()
