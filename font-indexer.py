@@ -92,26 +92,71 @@ def check_font_metrics(font_path):
         font = TTFont(font_path)
         cmap = font.getBestCmap()
         if not cmap:
-            return False
+            return False, "No cmap table found"
 
         hmtx = font['hmtx']
         units_per_em = font['head'].unitsPerEm
         
         required_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+        alphanumeric_widths = []
         for char in required_chars:
-            glyph_name = font.getBestCmap()[ord(char)]
+            if ord(char) not in cmap:
+                continue
+            glyph_name = cmap[ord(char)]
             advance_width, _ = hmtx[glyph_name]
+            alphanumeric_widths.append(advance_width)
 
             if advance_width == 0:
-                return False # Zero width character
+                return False, f"Character '{char}' has zero width"
             
             if advance_width > (units_per_em * 10):
-                return False # Excessively large character width
+                return False, f"Character '{char}' has excessively large width"
 
-        return True
+        if not alphanumeric_widths:
+            return False, "No alphanumeric characters found"
+
+        # Check for space character issues
+        if ord(' ') not in cmap:
+            return False, "No space character"
+
+        average_width = sum(alphanumeric_widths) / len(alphanumeric_widths)
+        space_glyph_name = cmap[ord(' ')]
+        space_advance_width, _ = hmtx[space_glyph_name]
+
+        if space_advance_width > (average_width * 3):
+            return False, "Space character is excessively wide"
+
+        return True, ""
     except Exception as e:
-        print(f"Could not check metrics for {font_path}: {e}")
-        return False
+        return False, f"Could not check metrics: {e}"
+
+def slow_check_font(font_path, size=24):
+    """Renders a test string with and without spaces to check for kerning issues."""
+    try:
+        font = ImageFont.truetype(font_path, size)
+        test_string_with_spaces = "A B C D E"
+        test_string_no_spaces = "ABCDE"
+
+        dummy_img = Image.new('RGB', (1, 1))
+        draw = ImageDraw.Draw(dummy_img)
+
+        try:
+            width_with_spaces = draw.textbbox((0, 0), test_string_with_spaces, font=font)[2]
+            width_no_spaces = draw.textbbox((0, 0), test_string_no_spaces, font=font)[2]
+            space_width = draw.textbbox((0,0), " ", font=font)[2]
+        except TypeError:
+            width_with_spaces = draw.textsize(test_string_with_spaces, font=font)[0]
+            width_no_spaces = draw.textsize(test_string_no_spaces, font=font)[0]
+            space_width = draw.textsize(" ", font=font)[0]
+
+        # A rough heuristic: if the difference in width is more than 4 times the width of a single space
+        # this suggests a kerning issue.
+        if (width_with_spaces - width_no_spaces) > (space_width * 4):
+            return False, "Potential kerning issue"
+
+        return True, ""
+    except Exception as e:
+        return False, f"Could not perform slow check: {e}"
 
 def main():
     parser = argparse.ArgumentParser(description='Generate an HTML index of fonts.')
@@ -123,6 +168,8 @@ def main():
                         help='The name of the output HTML file.')
     parser.add_argument('--font-size', type=int, default=24,
                         help='The font size to use for rendering.')
+    parser.add_argument('--slow-check', action='store_true',
+                        help='Perform a slower, more thorough check for font quality issues.')
     args = parser.parse_args()
 
     if not os.path.exists(args.output_dir):
@@ -149,6 +196,8 @@ def main():
                 html_content = markdown.markdown(markdown_content)
                 f.write(f'<div id="readme">{html_content}</div>')
 
+        f.write('<p>The <b>Quality</b> column indicates whether a font has passed a series of quality checks. A green checkmark (&#9989;) indicates that the font has passed all checks. A red \'x\' (&#10060;) indicates that the font may have issues, such as missing characters or inconsistent kerning, which can cause problems when rendering text.</p>')
+
         f.write(f'<p>Rendering the text: "{args.text}"</p>')
         f.write('<table id="fontTable">')
         f.write('<thead><tr><th onclick="sortTable(0)">Font Name</th><th onclick="sortTable(1)">Filename</th><th onclick="sortTable(2)">Style</th><th onclick="sortTable(3)">Quality</th><th>Render</th><th>Download</th></tr></thead>')
@@ -169,8 +218,14 @@ def main():
             if not info:
                 continue
 
-            metrics_ok = check_font_metrics(font_path)
+            metrics_ok, quality_reason = check_font_metrics(font_path)
+            if args.slow_check and metrics_ok:
+                metrics_ok, reason = slow_check_font(font_path, args.font_size)
+                if not metrics_ok:
+                    quality_reason = reason
+
             quality_icon = '&#9989;' if metrics_ok else '&#10060;'
+            title_attr = f'title="{quality_reason}"' if not metrics_ok else ''
 
             relative_font_path = os.path.relpath(font_path)
             image_name = os.path.basename(font_path) + '.png'
@@ -181,7 +236,7 @@ def main():
                 f.write(f'<td>{info["full_name"]}</td>')
                 f.write(f'<td>{os.path.basename(font_path)}</td>')
                 f.write(f'<td>{info["style"]}</td>')
-                f.write(f'<td>{quality_icon}</td>')
+                f.write(f'<td {title_attr}>{quality_icon}</td>')
                 f.write(f'<td><img src="{image_path}" alt="Render of {info["full_name"]}"></td>')
                 f.write(f'<td><a href="{relative_font_path}">Download</a></td>')
                 f.write('</tr>')
