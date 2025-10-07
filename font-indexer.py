@@ -170,12 +170,14 @@ def main():
                         help='The font size to use for rendering.')
     parser.add_argument('--slow-check', action='store_true',
                         help='Perform a slower, more thorough check for font quality issues.')
+    parser.add_argument('--font-dir', type=str, default='.',
+                        help='Directory to search for TrueType and OpenType fonts (default: current directory).')
     args = parser.parse_args()
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
-    fonts = find_fonts('.')
+    fonts = find_fonts(args.font_dir)
     
     with open(args.html_file, 'w') as f:
         f.write('<html><head><title>Font Index</title>')
