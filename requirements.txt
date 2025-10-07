@@ -1,3 +1,4 @@
 fonttools
 Pillow
 markdown
+tqdm

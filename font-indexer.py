@@ -1,9 +1,16 @@
-
 import os
 import argparse
 import markdown
+import warnings
+import logging
+import sys
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
+from tqdm import tqdm
+
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*is a bogus value.*")
+logging.getLogger('fontTools').setLevel(logging.ERROR)
+
 
 def get_font_info(font_path):
     """Extracts information from a TTF font file."""
@@ -147,8 +154,15 @@ def main():
         f.write('<thead><tr><th onclick="sortTable(0)">Font Name</th><th onclick="sortTable(1)">Filename</th><th onclick="sortTable(2)">Style</th><th onclick="sortTable(3)">Quality</th><th>Render</th><th>Download</th></tr></thead>')
         f.write('<tbody>')
 
-        for font_path in sorted(fonts):
+        font_iterator = sorted(fonts)
+        if sys.stdout.isatty():
+            font_iterator = tqdm(font_iterator, desc="Processing fonts", unit="font")
+
+        for font_path in font_iterator:
             if not has_required_chars(font_path):
+                if sys.stdout.isatty():
+                    # tqdm.write is used to print messages without interfering with the progress bar
+                    tqdm.write(f"Skipping {os.path.basename(font_path)} (missing required characters)")
                 continue
 
             info = get_font_info(font_path)
