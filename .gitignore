@@ -2,5 +2,5 @@ renders/
 *.pyc
 __pycache__/
 index.html
-*.ttf
+*.[tT][tT][fF]
 *.png
