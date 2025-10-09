@@ -195,7 +195,49 @@ def main():
 
     total_processed_fonts = 0
     fonts_with_issues = 0
-    
+    table_rows = []
+
+    font_iterator = sorted(fonts)
+    if sys.stdout.isatty():
+        font_iterator = tqdm(font_iterator, desc="Processing fonts", unit="font")
+
+    for font_path in font_iterator:
+        if not has_required_chars(font_path):
+            if sys.stdout.isatty():
+                tqdm.write(f"Skipping {os.path.basename(font_path)} (missing required characters)")
+            continue
+
+        info = get_font_info(font_path)
+        if not info:
+            continue
+
+        metrics_ok, quality_reason = check_font_metrics(font_path)
+        if args.slow_check and metrics_ok:
+            metrics_ok, reason = slow_check_font(font_path, args.font_size)
+            if not metrics_ok:
+                quality_reason = reason
+
+        quality_icon = '&#9989;' if metrics_ok else '&#10060;'
+        title_attr = f'title="{quality_reason}"' if not metrics_ok else ''
+
+        relative_font_path = os.path.relpath(font_path)
+        image_name = os.path.basename(font_path) + '.png'
+        image_path = os.path.join(args.output_dir, image_name)
+        
+        if render_text(args.text, font_path, image_path, args.font_size):
+            total_processed_fonts += 1
+            if not metrics_ok:
+                fonts_with_issues += 1
+            
+            table_rows.append('<tr>')
+            table_rows.append(f'<td class="font-name-col">{info["full_name"]}</td>')
+            table_rows.append(f'<td class="filename-col">{os.path.basename(font_path)}</td>')
+            table_rows.append(f'<td>{info["style"]}</td>')
+            table_rows.append(f'<td {title_attr}>{quality_icon}</td>')
+            table_rows.append(f'<td class="render-col"><img src="{image_path}" alt="Render of {info["full_name"]}"></td>')
+            table_rows.append(f'<td><a href="{relative_font_path}"><i class=\'bx bx-download\'></i></a></td>')
+            table_rows.append('</tr>')
+
     with open(args.html_file, 'w') as f:
         f.write('<html><head><title>Font Index</title>')
         f.write('<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">')
@@ -227,48 +269,7 @@ def main():
         f.write('<table id="fontTable">')
         f.write('<thead><tr><th class="font-name-col" onclick="sortTable(0)">Font Name</th><th class="filename-col" onclick="sortTable(1)">Filename</th><th onclick="sortTable(2)">Style</th><th onclick="sortTable(3)">Quality</th><th class="render-col">Render</th><th></th></tr></thead>')
         f.write('<tbody>')
-
-        font_iterator = sorted(fonts)
-        if sys.stdout.isatty():
-            font_iterator = tqdm(font_iterator, desc="Processing fonts", unit="font")
-
-        for font_path in font_iterator:
-            if not has_required_chars(font_path):
-                if sys.stdout.isatty():
-                    # tqdm.write is used to print messages without interfering with the progress bar
-                    tqdm.write(f"Skipping {os.path.basename(font_path)} (missing required characters)")
-                continue
-
-            info = get_font_info(font_path)
-            if not info:
-                continue
-
-            metrics_ok, quality_reason = check_font_metrics(font_path)
-            if args.slow_check and metrics_ok:
-                metrics_ok, reason = slow_check_font(font_path, args.font_size)
-                if not metrics_ok:
-                    quality_reason = reason
-
-            quality_icon = '&#9989;' if metrics_ok else '&#10060;'
-            title_attr = f'title="{quality_reason}"' if not metrics_ok else ''
-
-            relative_font_path = os.path.relpath(font_path)
-            image_name = os.path.basename(font_path) + '.png'
-            image_path = os.path.join(args.output_dir, image_name)
-            
-            if render_text(args.text, font_path, image_path, args.font_size):
-                total_processed_fonts += 1
-                if not metrics_ok:
-                    fonts_with_issues += 1
-                f.write('<tr>')
-                f.write(f'<td class="font-name-col">{info["full_name"]}</td>')
-                f.write(f'<td class="filename-col">{os.path.basename(font_path)}</td>')
-                f.write(f'<td>{info["style"]}</td>')
-                f.write(f'<td {title_attr}>{quality_icon}</td>')
-                f.write(f'<td class="render-col"><img src="{image_path}" alt="Render of {info["full_name"]}"></td>')
-                f.write(f'<td><a href="{relative_font_path}"><i class=\'bx bx-download\'></i></a></td>')
-                f.write('</tr>')
-        
+        f.write('\n'.join(table_rows))
         f.write('</tbody>')
         f.write('</table>')
         f.write('''
