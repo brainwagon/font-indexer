@@ -12,24 +12,32 @@ fonts, and no permission to redistribute the font collection is granted.
 I've used gemini-cli to write a simple program to create an index of these font files. Feel 
 free to use (and redistribute) the font-indexer.py file under the condition of the LICENSE.
 
+A recent change has been made to correct a font rendering issue in both scripts, where characters were being cut off. The rendering logic has been updated to ensure full characters, including ascenders and descenders, are displayed correctly.
+
 ### `font-indexer.py`
 
-This script indexes TrueType and OpenType fonts in a specified directory and outputs a `font_index.json` file containing metadata about each font.
+This script indexes TrueType and OpenType fonts in a specified directory, generates an HTML file with rendered previews of each font.
 
 **Usage:**
 
 ```bash
-python font-indexer.py [--font-dir FONT_DIRECTORY]
+python font-indexer.py [--font-dir FONT_DIRECTORY] [--output-dir OUTPUT_DIRECTORY] [--html-file HTML_FILENAME] [--font-size FONT_SIZE] [--text TEXT_TO_RENDER] [--slow-check] [-n NUMBER_OF_FONTS]
 ```
 
 **Arguments:**
 
 *   `--font-dir FONT_DIRECTORY`: Directory to search for TrueType and OpenType fonts. Defaults to the current directory (`.`).
+*   `--output-dir OUTPUT_DIRECTORY`: The directory to save rendered font images. Defaults to `renders`.
+*   `--html-file HTML_FILENAME`: The name of the output HTML file. Defaults to `index.html`.
+*   `--font-size FONT_SIZE`: The font size to use for rendering. Defaults to `24`.
+*   `--text TEXT_TO_RENDER`: The text to render for each font. Defaults to 'The quick brown fox jumps over the lazy dog.'.
+*   `--slow-check`: Perform a slower, more thorough check for font quality issues.
+*   `-n NUMBER_OF_FONTS`, `--number NUMBER_OF_FONTS`: Limit the total number of fonts to process.
 
 **Example:**
 
 ```bash
-python font-indexer.py --font-dir /path/to/my/fonts
+python font-indexer.py --font-dir /path/to/my/fonts -n 50
 ```
 
 ### `font-renderer.py`

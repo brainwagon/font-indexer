@@ -36,24 +36,33 @@ def render_text(text, font_path, image_path, size):
     try:
         font = ImageFont.truetype(font_path, size)
         
-        # Create a dummy image to calculate the text size
+        # Get font metrics for accurate height calculation
+        ascent, descent = font.getmetrics()
+
+        # Create a dummy image to calculate the text width
         dummy_img = Image.new('RGB', (1, 1))
         draw = ImageDraw.Draw(dummy_img)
         
-        # Get the bounding box of the text
+        # Get the bounding box of the text to determine width
         try:
             bbox = draw.textbbox((0, 0), text, font=font)
             text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
         except TypeError:
             # Fallback for older Pillow versions
-            text_width, text_height = draw.textsize(text, font=font)
+            text_width, _ = draw.textsize(text, font=font)
 
+        # Add padding around the text
+        padding = 10
+        img_width = text_width + (2 * padding)
+        # Calculate image height using font's global ascent and descent
+        img_height = ascent + abs(descent) + (2 * padding)
 
-        img = Image.new('RGBA', (text_width + 20, text_height + 20), (255, 255, 255, 0))
+        img = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))
         draw = ImageDraw.Draw(img)
         
-        draw.text((10, 10), text, font=font, fill='black')
+        # Position text: (x, y) where y is the top of the text.
+        # The top of the text should be at `padding` to leave space for ascenders.
+        draw.text((padding, padding), text, font=font, fill='black')
         img.save(image_path, 'PNG')
         return True
     except Exception as e:
@@ -172,15 +181,24 @@ def main():
                         help='Perform a slower, more thorough check for font quality issues.')
     parser.add_argument('--font-dir', type=str, default='.',
                         help='Directory to search for TrueType and OpenType fonts (default: current directory).')
+    parser.add_argument('-n', '--number', type=int, default=None,
+                        help='Limit the total number of files converted to the specified number.')
     args = parser.parse_args()
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
     fonts = find_fonts(args.font_dir)
+
+    if args.number is not None:
+        fonts = fonts[:args.number]
+
+    total_processed_fonts = 0
+    fonts_with_issues = 0
     
     with open(args.html_file, 'w') as f:
         f.write('<html><head><title>Font Index</title>')
+        f.write('<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">')
         f.write('<style>')
         f.write('body { font-family: sans-serif; margin: 2em; }')
         f.write('table { border-collapse: collapse; width: 100%; }')
@@ -188,9 +206,14 @@ def main():
         f.write('th { background-color: #f2f2f2; cursor: pointer; }')
         f.write('img { max-width: 100%; height: auto; }')
         f.write('#readme { background-color: #f9f9f9; border: 1px solid #eee; padding: 1em; margin-bottom: 2em; }')
+        f.write('.font-name-col, .filename-col { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }')
+        f.write('.render-col { width: auto; }')
         f.write('</style>')
         f.write('</head><body>')
         f.write('<h1>Font Index</h1>')
+
+        f.write(f'<p>Total fonts processed: {total_processed_fonts}</p>')
+        f.write(f'<p>Fonts with quality issues (&#10060;): {fonts_with_issues}</p>')
 
         if os.path.exists('README.md'):
             with open('README.md', 'r') as readme_file:
@@ -202,7 +225,7 @@ def main():
 
         f.write(f'<p>Rendering the text: "{args.text}"</p>')
         f.write('<table id="fontTable">')
-        f.write('<thead><tr><th onclick="sortTable(0)">Font Name</th><th onclick="sortTable(1)">Filename</th><th onclick="sortTable(2)">Style</th><th onclick="sortTable(3)">Quality</th><th>Render</th><th>Download</th></tr></thead>')
+        f.write('<thead><tr><th class="font-name-col" onclick="sortTable(0)">Font Name</th><th class="filename-col" onclick="sortTable(1)">Filename</th><th onclick="sortTable(2)">Style</th><th onclick="sortTable(3)">Quality</th><th class="render-col">Render</th><th></th></tr></thead>')
         f.write('<tbody>')
 
         font_iterator = sorted(fonts)
@@ -234,13 +257,16 @@ def main():
             image_path = os.path.join(args.output_dir, image_name)
             
             if render_text(args.text, font_path, image_path, args.font_size):
+                total_processed_fonts += 1
+                if not metrics_ok:
+                    fonts_with_issues += 1
                 f.write('<tr>')
-                f.write(f'<td>{info["full_name"]}</td>')
-                f.write(f'<td>{os.path.basename(font_path)}</td>')
+                f.write(f'<td class="font-name-col">{info["full_name"]}</td>')
+                f.write(f'<td class="filename-col">{os.path.basename(font_path)}</td>')
                 f.write(f'<td>{info["style"]}</td>')
                 f.write(f'<td {title_attr}>{quality_icon}</td>')
-                f.write(f'<td><img src="{image_path}" alt="Render of {info["full_name"]}"></td>')
-                f.write(f'<td><a href="{relative_font_path}">Download</a></td>')
+                f.write(f'<td class="render-col"><img src="{image_path}" alt="Render of {info["full_name"]}"></td>')
+                f.write(f'<td><a href="{relative_font_path}"><i class=\'bx bx-download\'></i></a></td>')
                 f.write('</tr>')
         
         f.write('</tbody>')

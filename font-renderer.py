@@ -9,23 +9,33 @@ def render_text(text, font_path, image_path, size):
     try:
         font = ImageFont.truetype(font_path, size)
         
-        # Create a dummy image to calculate the text size
+        # Get font metrics for accurate height calculation
+        ascent, descent = font.getmetrics()
+
+        # Create a dummy image to calculate the text width
         dummy_img = Image.new('RGB', (1, 1))
         draw = ImageDraw.Draw(dummy_img)
         
-        # Get the bounding box of the text
+        # Get the bounding box of the text to determine width
         try:
             bbox = draw.textbbox((0, 0), text, font=font)
             text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
         except TypeError:
             # Fallback for older Pillow versions
-            text_width, text_height = draw.textsize(text, font=font)
+            text_width, _ = draw.textsize(text, font=font)
 
-        img = Image.new('RGBA', (text_width + 20, text_height + 20), (255, 255, 255, 0))
+        # Add padding around the text
+        padding = 10
+        img_width = text_width + (2 * padding)
+        # Calculate image height using font's global ascent and descent
+        img_height = ascent + abs(descent) + (2 * padding)
+
+        img = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))
         draw = ImageDraw.Draw(img)
         
-        draw.text((10, 10), text, font=font, fill='black')
+        # Position text: (x, y) where y is the top of the text.
+        # The top of the text should be at `padding` to leave space for ascenders.
+        draw.text((padding, padding), text, font=font, fill='black')
         img.save(image_path, 'PNG')
         return True
     except Exception as e:
